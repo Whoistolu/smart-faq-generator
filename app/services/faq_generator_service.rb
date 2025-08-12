@@ -53,7 +53,6 @@ class FaqGeneratorService
 
 
   def parse_response(body)
-
     begin
       parsed = JSON.parse(body)
 
