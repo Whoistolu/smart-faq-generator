@@ -1,5 +1,4 @@
 class Api::V1::PublicFaqsController < ApplicationController
-    class PublicFaqsController < ApplicationController
       def show
         content = Content.find_by!(slug: params[:slug])
         render json: {
@@ -7,5 +6,4 @@ class Api::V1::PublicFaqsController < ApplicationController
           faqs: content.faqs.select(:question, :answer)
         }
       end
-    end
 end
