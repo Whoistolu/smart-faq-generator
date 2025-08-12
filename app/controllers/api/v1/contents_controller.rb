@@ -1,6 +1,5 @@
 class Api::V1::ContentsController < ApplicationController
     class ContentsController < ApplicationController
-
       def create
         content = Content.new(content_params)
         if content.save
