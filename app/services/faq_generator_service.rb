@@ -36,15 +36,17 @@ class FaqGeneratorService
 
   def build_prompt(text)
     <<~PROMPT
-      Convert the following content into a JSON array of FAQs for customers.
-      Output must be valid JSON (an array of objects). Each object must have keys: "question" and "answer".
+    Return **only** valid JSON. Do not add explanations or extra text. If you cannot, return an empty JSON array.
+    You are an FAQ generator for businesses.
+    Given the following product or service description, extract 5-10 clear and concise FAQs with helpful answers.
+    Return the result strictly in JSON format with keys "question" and "answer".
       Rules:
       - Use plain, non-technical language.
       - Produce at most 8 FAQs.
       - Keep answers short (1-3 sentences).
       - Do not output any text outside the JSON array.
 
-      Content:
+      Description:
       """#{' '}
       #{text}
       """
@@ -53,6 +55,7 @@ class FaqGeneratorService
 
 
   def parse_response(body)
+    Rails.logger.debug("[FaqGeneratorService] Raw API response: #{body.inspect}")
     begin
       parsed = JSON.parse(body)
 
@@ -86,11 +89,11 @@ class FaqGeneratorService
 
 
   def fallback_from_text(text)
-    paras = text.split(/\n{2,}/).map(&:strip).reject(&:empty?).first(6)
-    paras.map.with_index do |p, i|
+    sentences = text.split(/\. |\n/).map(&:strip).reject(&:empty?).first(6)
+    sentences.map.with_index do |s, i|
       {
-        "question" => "About: #{p.truncate(60)}?",
-        "answer" => p.split("\n").first.truncate(280)
+        "question" => "What should I know about: #{s.truncate(60)}?",
+        "answer" => s.truncate(280)
       }
     end
   end
