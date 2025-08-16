@@ -57,27 +57,41 @@ class FaqGeneratorService
   end
 
   def parse_response(body)
-    Rails.logger.debug("[FaqGeneratorService] Raw API response: #{body.inspect}")
+  Rails.logger.debug("[FaqGeneratorService] Raw API response: #{body.inspect}")
+  begin
     parsed = JSON.parse(body)
 
-    if parsed.is_a?(Hash) && parsed["choices"]
-      content = parsed["choices"].first.dig("message", "content")
-      if content
-        if (match = content.match(/(\[.*\])/m))
-          json_text = match[1]
-          begin
-            json = JSON.parse(json_text)
-            return json if json.is_a?(Array) && json.all? { |o| o["question"] && o["answer"] }
-          rescue JSON::ParserError
-          end
-        end
-      end
-    end
+    # Case 1: HuggingFace text generation
+    if parsed.is_a?(Array) && parsed.first.is_a?(Hash) && parsed.first.key?("generated_text")
+      text = parsed.map { |e| e["generated_text"] }.join("\n")
 
-    nil
+    # Case 2: OpenAI/Fireworks chat-style responses
+    elsif parsed.is_a?(Hash) && parsed.dig("choices", 0, "message", "content")
+      text = parsed.dig("choices", 0, "message", "content")
+
+    # Case 3: Already valid FAQ JSON
+    elsif parsed.is_a?(Array) && parsed.all? { |o| o.is_a?(Hash) && o["question"] && o["answer"] }
+      return parsed
+    else
+      text = body.to_s
+    end
   rescue JSON::ParserError
-    nil
+    text = body.to_s
   end
+
+  if (match = text.match(/(\[.*\])/m))
+    json_text = match[1]
+    begin
+      json = JSON.parse(json_text)
+      return json if json.is_a?(Array) && json.all? { |o| o["question"] && o["answer"] }
+    rescue JSON::ParserError
+      # ignore
+    end
+  end
+
+  nil
+end
+
 
   def fallback_from_text(text)
     sentences = text.split(/\. |\n/).map(&:strip).reject(&:empty?).first(6)
