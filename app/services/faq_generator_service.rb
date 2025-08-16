@@ -61,15 +61,12 @@ class FaqGeneratorService
   begin
     parsed = JSON.parse(body)
 
-    # Case 1: HuggingFace text generation
     if parsed.is_a?(Array) && parsed.first.is_a?(Hash) && parsed.first.key?("generated_text")
       text = parsed.map { |e| e["generated_text"] }.join("\n")
 
-    # Case 2: OpenAI/Fireworks chat-style responses
     elsif parsed.is_a?(Hash) && parsed.dig("choices", 0, "message", "content")
       text = parsed.dig("choices", 0, "message", "content")
 
-    # Case 3: Already valid FAQ JSON
     elsif parsed.is_a?(Array) && parsed.all? { |o| o.is_a?(Hash) && o["question"] && o["answer"] }
       return parsed
     else
@@ -91,6 +88,7 @@ class FaqGeneratorService
 
   nil
 end
+
 
 
   def fallback_from_text(text)
