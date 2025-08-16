@@ -3,20 +3,28 @@ require "json"
 require "securerandom"
 
 class FaqGeneratorService
-  DEFAULT_MODEL = ENV.fetch("HF_MODEL", "google/flan-t5-large")
-  HF_ENDPOINT = ->(model) { "https://api-inference.huggingface.co/models/#{model}" }
+  HF_ENDPOINT = "https://router.huggingface.co/v1/chat/completions"
+  DEFAULT_MODEL = ENV.fetch("HF_MODEL", "zai-org/GLM-4.5:fireworks-ai")
 
   def initialize(content_body, model: DEFAULT_MODEL)
     @body = content_body.to_s
     @model = model
   end
 
-
   def call
     prompt = build_prompt(@body)
-    payload = { inputs: prompt, parameters: { max_new_tokens: 512, temperature: 0.2 } }.to_json
 
-    uri = URI(HF_ENDPOINT.call(@model))
+    payload = {
+      model: @model,
+      messages: [
+        { role: "user", content: prompt }
+      ],
+      stream: false,
+      temperature: 0.2,
+      max_tokens: 512
+    }.to_json
+
+    uri = URI(HF_ENDPOINT)
     req = Net::HTTP::Post.new(uri)
     req["Authorization"] = "Bearer #{ENV['HF_API_KEY']}"
     req["Content-Type"] = "application/json"
@@ -36,64 +44,47 @@ class FaqGeneratorService
 
   def build_prompt(text)
     <<~PROMPT
-    Return **only** valid JSON. Do not add explanations or extra text. If you cannot, return an empty JSON array.
-    You are an FAQ generator for businesses.
-    Given the following product or service description, extract 5-10 clear and concise FAQs with helpful answers.
-    Return the result strictly in JSON format with keys "question" and "answer".
-      Rules:
-      - Use plain, non-technical language.
-      - Produce at most 8 FAQs.
-      - Keep answers short (1-3 sentences).
-      - Do not output any text outside the JSON array.
+    Generate 5–8 FAQ questions and answers based on the text below. 
+    Return ONLY valid JSON in the format:
+    [
+      {"question": "string", "answer": "string"},
+      ...
+    ]
 
-      Description:
-      """#{' '}
-      #{text}
-      """
+    Text:
+    #{text}
     PROMPT
   end
 
-
   def parse_response(body)
     Rails.logger.debug("[FaqGeneratorService] Raw API response: #{body.inspect}")
-    begin
-      parsed = JSON.parse(body)
+    parsed = JSON.parse(body)
 
-      if parsed.is_a?(Array) && parsed.first.is_a?(Hash) && parsed.first.key?("generated_text")
-        text = parsed.map { |e| e["generated_text"] }.join("\n")
-      elsif parsed.is_a?(Hash) && parsed["generated_text"]
-        text = parsed["generated_text"]
-      else
-
-        if parsed.is_a?(Array) && parsed.all? { |o| o.is_a?(Hash) && o["question"] && o["answer"] }
-          return parsed
+    if parsed.is_a?(Hash) && parsed["choices"]
+      content = parsed["choices"].first.dig("message", "content")
+      if content
+        if (match = content.match(/(\[.*\])/m))
+          json_text = match[1]
+          begin
+            json = JSON.parse(json_text)
+            return json if json.is_a?(Array) && json.all? { |o| o["question"] && o["answer"] }
+          rescue JSON::ParserError
+          end
         end
-        text = body.to_s
-      end
-    rescue JSON::ParserError
-      text = body.to_s
-    end
-
-
-    if (match = text.match(/(\[.*\])/m))
-      json_text = match[1]
-      begin
-        json = JSON.parse(json_text)
-        return json if json.is_a?(Array) && json.all? { |o| o["question"] && o["answer"] }
-      rescue JSON::ParserError
       end
     end
 
     nil
+  rescue JSON::ParserError
+    nil
   end
-
 
   def fallback_from_text(text)
     sentences = text.split(/\. |\n/).map(&:strip).reject(&:empty?).first(6)
-    sentences.map.with_index do |s, i|
+    sentences.map do |s|
       {
-        "question" => "What should I know about: #{s.truncate(60)}?",
-        "answer" => s.truncate(280)
+        "question" => "What is important about '#{s.truncate(50)}'?",
+        "answer" => s.truncate(200)
       }
     end
   end
