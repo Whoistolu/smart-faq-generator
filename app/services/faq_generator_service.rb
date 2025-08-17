@@ -21,7 +21,7 @@ class FaqGeneratorService
       ],
       stream: false,
       temperature: 0.2,
-      max_tokens: 512
+      max_tokens: 1024
     }.to_json
 
     uri = URI(HF_ENDPOINT)
