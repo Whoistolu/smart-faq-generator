@@ -44,9 +44,14 @@ class FaqGeneratorService
 
   def build_prompt(text)
     <<~PROMPT
+    You are an FAQ generator.
     Generate 5–8 FAQ questions and answers based on the text below.#{' '}
     Respond with ONLY valid JSON in this exact format, with no extra commentary:
+    Given this text:
 
+    "#{@body}"
+
+    Return only valid JSON in this format:
     [
       {"question": "string", "answer": "string"},
       ...
