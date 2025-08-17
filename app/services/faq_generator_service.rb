@@ -43,54 +43,65 @@ class FaqGeneratorService
   private
 
   def build_prompt(text)
-  <<~PROMPT
-  Generate 5–8 FAQ questions and answers based on the text below.#{' '}
-  Respond with ONLY valid JSON in this exact format, with no extra commentary:
+    <<~PROMPT
+    Generate 5–8 FAQ questions and answers based on the text below.#{' '}
+    Respond with ONLY valid JSON in this exact format, with no extra commentary:
 
-  [
-    {"question": "string", "answer": "string"},
-    ...
-  ]
+    [
+      {"question": "string", "answer": "string"},
+      ...
+    ]
 
-  Text:
-  #{text}
-  PROMPT
-end
+    Text:
+    #{text}
+    PROMPT
+  end
 
-  def parse_response(body)
-  Rails.logger.debug("[FaqGeneratorService] Raw API response: #{body.inspect}")
+  
+def parse_response(body)
+    Rails.logger.debug("[FaqGeneratorService] Raw API response: #{body.inspect}")
 
-  begin
-    parsed = JSON.parse(body)
+    begin
+      parsed = JSON.parse(body)
 
-    if parsed.is_a?(Array) && parsed.first.is_a?(Hash) && parsed.first.key?("generated_text")
-      text = parsed.map { |e| e["generated_text"] }.join("\n")
+      if parsed.is_a?(Array) && parsed.first.is_a?(Hash) && parsed.first.key?("generated_text")
+        text = parsed.map { |e| e["generated_text"] }.join("\n")
 
-    elsif parsed.is_a?(Hash) && parsed.dig("choices", 0, "message", "content")
-      text = parsed.dig("choices", 0, "message", "content")
+      elsif parsed.is_a?(Hash) && parsed.dig("choices", 0, "message", "content")
+        text = parsed.dig("choices", 0, "message", "content")
 
-    elsif parsed.is_a?(Array) && parsed.all? { |o| o.is_a?(Hash) && o["question"] && o["answer"] }
-      return parsed
-    else
+        begin
+          inner_json = JSON.parse(text)
+          return inner_json if inner_json.is_a?(Array) &&
+                              inner_json.all? { |o| o["question"] && o["answer"] }
+        rescue JSON::ParserError
+          # not valid JSON, continue fallback
+        end
+
+      elsif parsed.is_a?(Array) && parsed.all? { |o| o.is_a?(Hash) && o["question"] && o["answer"] }
+        return parsed
+
+      elsif parsed.is_a?(Hash) && parsed["faqs"].is_a?(Array)
+        return parsed["faqs"].select { |o| o["question"] && o["answer"] }
+      else
+        text = body.to_s
+      end
+    rescue JSON::ParserError
       text = body.to_s
     end
-  rescue JSON::ParserError
-    text = body.to_s
-  end
 
-  if (match = text.match(/\[.*\]/m))
-    json_text = match[0]
-    begin
-      json = JSON.parse(json_text)
-      return json if json.is_a?(Array) && json.all? { |o| o["question"] && o["answer"] }
-    rescue JSON::ParserError => e
-      Rails.logger.error("[FaqGeneratorService] JSON parse failed: #{e.message}")
+    if (match = text.match(/\[.*\]/m))
+      json_text = match[0]
+      begin
+        json = JSON.parse(json_text)
+        return json if json.is_a?(Array) && json.all? { |o| o["question"] && o["answer"] }
+      rescue JSON::ParserError => e
+        Rails.logger.error("[FaqGeneratorService] JSON parse failed: #{e.message}")
+      end
     end
+
+    nil
   end
-
-  nil
-end
-
 
 
   def fallback_from_text(text)
