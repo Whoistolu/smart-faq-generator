@@ -92,11 +92,14 @@ def parse_response(body)
 
     if (match = text.match(/\[.*\]/m))
       json_text = match[0]
+      json_text = json_text.sub(/,\s*\z/, '')
+      json_text = json_text.sub(/}\s*\z/, '}]') unless json_text.strip.end_with?("]")
+
       begin
         json = JSON.parse(json_text)
         return json if json.is_a?(Array) && json.all? { |o| o["question"] && o["answer"] }
       rescue JSON::ParserError => e
-        Rails.logger.error("[FaqGeneratorService] JSON parse failed: #{e.message}")
+        Rails.logger.error("[FaqGeneratorService] JSON recovery failed: #{e.message}")
       end
     end
 
