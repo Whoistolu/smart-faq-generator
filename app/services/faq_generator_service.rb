@@ -43,21 +43,23 @@ class FaqGeneratorService
   private
 
   def build_prompt(text)
-    <<~PROMPT
-    Generate 5–8 FAQ questions and answers based on the text below. 
-    Return ONLY valid JSON in the format:
-    [
-      {"question": "string", "answer": "string"},
-      ...
-    ]
+  <<~PROMPT
+  Generate 5–8 FAQ questions and answers based on the text below. 
+  Respond with ONLY valid JSON in this exact format, with no extra commentary:
 
-    Text:
-    #{text}
-    PROMPT
-  end
+  [
+    {"question": "string", "answer": "string"},
+    ...
+  ]
+
+  Text:
+  #{text}
+  PROMPT
+end
 
   def parse_response(body)
   Rails.logger.debug("[FaqGeneratorService] Raw API response: #{body.inspect}")
+
   begin
     parsed = JSON.parse(body)
 
@@ -76,13 +78,13 @@ class FaqGeneratorService
     text = body.to_s
   end
 
-  if (match = text.match(/(\[.*\])/m))
-    json_text = match[1]
+  if (match = text.match(/\[.*\]/m))
+    json_text = match[0]
     begin
       json = JSON.parse(json_text)
       return json if json.is_a?(Array) && json.all? { |o| o["question"] && o["answer"] }
-    rescue JSON::ParserError
-      # ignore
+    rescue JSON::ParserError => e
+      Rails.logger.error("[FaqGeneratorService] JSON parse failed: #{e.message}")
     end
   end
 
