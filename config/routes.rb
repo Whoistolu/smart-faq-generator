@@ -1,7 +1,7 @@
 Rails.application.routes.draw do
   namespace :api do
     namespace :v1 do
-      resources :contents, only: [:create, :show] do
+      resources :contents, only: [ :create, :show ] do
         member do
           get :faqs
         end

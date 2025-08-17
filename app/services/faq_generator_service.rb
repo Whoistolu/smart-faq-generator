@@ -44,7 +44,7 @@ class FaqGeneratorService
 
   def build_prompt(text)
   <<~PROMPT
-  Generate 5–8 FAQ questions and answers based on the text below. 
+  Generate 5–8 FAQ questions and answers based on the text below.#{' '}
   Respond with ONLY valid JSON in this exact format, with no extra commentary:
 
   [
