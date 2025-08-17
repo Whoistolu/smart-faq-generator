@@ -21,7 +21,8 @@ class FaqGeneratorService
       ],
       stream: false,
       temperature: 0.2,
-      max_tokens: 1024
+      max_tokens: 1024,
+      response_format: { type: "json_object" }
     }.to_json
 
     uri = URI(HF_ENDPOINT)
@@ -36,7 +37,6 @@ class FaqGeneratorService
 
     parse_response(res.body) || fallback_from_text(@body)
   rescue => e
-    Rails.logger.error("[FaqGeneratorService] #{e.class}: #{e.message}")
     fallback_from_text(@body)
   end
 
@@ -59,52 +59,61 @@ class FaqGeneratorService
 
   
 def parse_response(body)
-    Rails.logger.debug("[FaqGeneratorService] Raw API response: #{body.inspect}")
+  return nil if body.blank?
 
-    begin
-      parsed = JSON.parse(body)
+  begin
+    parsed = JSON.parse(body)
 
-      if parsed.is_a?(Array) && parsed.first.is_a?(Hash) && parsed.first.key?("generated_text")
-        text = parsed.map { |e| e["generated_text"] }.join("\n")
-
-      elsif parsed.is_a?(Hash) && parsed.dig("choices", 0, "message", "content")
-        text = parsed.dig("choices", 0, "message", "content")
-
-        begin
-          inner_json = JSON.parse(text)
-          return inner_json if inner_json.is_a?(Array) &&
-                              inner_json.all? { |o| o["question"] && o["answer"] }
-        rescue JSON::ParserError
-          # not valid JSON, continue fallback
-        end
-
-      elsif parsed.is_a?(Array) && parsed.all? { |o| o.is_a?(Hash) && o["question"] && o["answer"] }
-        return parsed
-
-      elsif parsed.is_a?(Hash) && parsed["faqs"].is_a?(Array)
-        return parsed["faqs"].select { |o| o["question"] && o["answer"] }
-      else
-        text = body.to_s
-      end
-    rescue JSON::ParserError
-      text = body.to_s
-    end
-
-    if (match = text.match(/\[.*\]/m))
-      json_text = match[0]
-      json_text = json_text.sub(/,\s*\z/, '')
-      json_text = json_text.sub(/}\s*\z/, '}]') unless json_text.strip.end_with?("]")
+    if parsed.is_a?(Hash) && parsed["choices"]
+      content = parsed.dig("choices", 0, "message", "content")
 
       begin
-        json = JSON.parse(json_text)
-        return json if json.is_a?(Array) && json.all? { |o| o["question"] && o["answer"] }
-      rescue JSON::ParserError => e
-        Rails.logger.error("[FaqGeneratorService] JSON recovery failed: #{e.message}")
+        inner = JSON.parse(content)
+
+        if inner.is_a?(Hash) && inner["response"]
+          response = inner["response"]
+
+          response = JSON.parse(response) if response.is_a?(String)
+          if response.is_a?(Array) && response.all? { |o| o["question"] && o["answer"] }
+            return response
+          end
+        end
+
+        if inner.is_a?(Array) && inner.all? { |o| o["question"] && o["answer"] }
+          return inner
+        elsif inner.is_a?(Hash) && inner["question"] && inner["answer"]
+          return [inner]
+        end
+      rescue JSON::ParserError
       end
     end
 
-    nil
+    if parsed.is_a?(Array) && parsed.all? { |o| o["question"] && o["answer"] }
+      return parsed
+    end
+
+    if parsed.is_a?(Hash) && parsed["faqs"].is_a?(Array)
+      return parsed["faqs"].select { |o| o["question"] && o["answer"] }
+    end
+  rescue JSON::ParserError
   end
+
+  if (match = body.match(/\[.*\]/m))
+    json_str = match[0]
+    begin
+      faqs = JSON.parse(json_str)
+      if faqs.is_a?(Array) && faqs.all? { |o| o["question"] && o["answer"] }
+        return faqs
+      end
+    rescue JSON::ParserError => e
+      Rails.logger.error("[FaqGeneratorService] Regex JSON recovery failed: #{e.message}")
+    end
+  end
+
+  nil
+end
+
+
 
 
   def fallback_from_text(text)
@@ -112,7 +121,7 @@ def parse_response(body)
     sentences.map do |s|
       {
         "question" => "What is important about '#{s.truncate(50)}'?",
-        "answer" => s.truncate(200)
+        "answer"   => s.truncate(200)
       }
     end
   end
