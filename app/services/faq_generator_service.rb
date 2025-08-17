@@ -62,7 +62,7 @@ class FaqGeneratorService
     PROMPT
   end
 
-  
+
 def parse_response(body)
   return nil if body.blank?
 
@@ -87,7 +87,7 @@ def parse_response(body)
         if inner.is_a?(Array) && inner.all? { |o| o["question"] && o["answer"] }
           return inner
         elsif inner.is_a?(Hash) && inner["question"] && inner["answer"]
-          return [inner]
+          return [ inner ]
         end
       rescue JSON::ParserError
       end
